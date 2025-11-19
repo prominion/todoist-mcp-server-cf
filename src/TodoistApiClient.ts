@@ -1,4 +1,5 @@
-const API_BASE_URL = 'https://api.todoist.com/api/v1'
+const API_BASE_URL = 'https://api.todoist.com/rest/v2'
+const SYNC_API_URL = 'https://api.todoist.com/sync/v9/sync'
 
 export class TodoistClient {
     private readonly apiToken: string
@@ -101,5 +102,48 @@ export class TodoistClient {
         })
 
         return this.handleResponse(response)
+    }
+
+    /**
+     * Move a task using Sync API
+     * @param taskId - ID of the task to move
+     * @param destination - Object containing project_id, section_id, or parent_id
+     * @returns Sync API response
+     */
+    async moveTask(taskId: string, destination: { project_id?: string; section_id?: string; parent_id?: string }): Promise<unknown> {
+        const uuid = crypto.randomUUID()
+
+        const args: Record<string, string> = { id: taskId }
+        if (destination.project_id) args.project_id = destination.project_id
+        if (destination.section_id) args.section_id = destination.section_id
+        if (destination.parent_id) args.parent_id = destination.parent_id
+
+        const commands = [{
+            type: 'item_move',
+            uuid: uuid,
+            args: args
+        }]
+
+        console.log(`Making Sync API request to move task ${taskId}:`, JSON.stringify(commands, null, 2))
+
+        const response = await fetch(SYNC_API_URL, {
+            method: 'POST',
+            headers: this.getHeaders(true),
+            body: JSON.stringify({ commands })
+        })
+
+        if (!response.ok) {
+            const errorText = await response.text()
+            throw new Error(`Todoist Sync API error (${response.status}): ${errorText}`)
+        }
+
+        const result = await response.json() as { sync_status: Record<string, string> }
+
+        // Check if the command was successful
+        if (result.sync_status && result.sync_status[uuid] !== 'ok') {
+            throw new Error(`Move task failed: ${JSON.stringify(result.sync_status[uuid])}`)
+        }
+
+        return result
     }
 }

@@ -58,24 +58,14 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
             async ({ filter }) => {
                 const client = new TodoistClient(this.props.accessToken)
                 try {
-                    const tasks = (await client.get('/tasks/filter', { query: filter, limit: 200 })) as {
-                        next_cursor?: string
-                        results: Array<{
-                            content: string
-                            description: string
-                            due?: { date: string }
-                        }>
-                    }
-
-                    // check if tasks exceeds 200 by checking next_cursor
-                    if (tasks.next_cursor) {
-                        return {
-                            content: [{ type: 'text', text: 'Tasks limit exceeded' }],
-                        }
-                    }
+                    const tasks = (await client.get('/tasks', { filter })) as Array<{
+                        content: string
+                        description: string
+                        due?: { date: string }
+                    }>
 
                     // Extract required fields and format the response
-                    const formattedTasks = tasks.results.map((task) => ({
+                    const formattedTasks = tasks.map((task) => ({
                         content: task.content,
                         description: task.description,
                         due_date: task.due?.date || null,
@@ -723,15 +713,15 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                             isError: true
                         }
                     }
-                    
-                    const moveData: Record<string, unknown> = {}
-                    if (project_id) moveData.project_id = project_id
-                    if (section_id) moveData.section_id = section_id
-                    if (parent_id) moveData.parent_id = parent_id
-                    
-                    const result = await client.post(`/tasks/${task_id}/move`, moveData)
+
+                    const destination: { project_id?: string; section_id?: string; parent_id?: string } = {}
+                    if (project_id) destination.project_id = project_id
+                    if (section_id) destination.section_id = section_id
+                    if (parent_id) destination.parent_id = parent_id
+
+                    const result = await client.moveTask(task_id, destination)
                     return {
-                        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
+                        content: [{ type: 'text', text: `Task moved successfully.\n${JSON.stringify(result, null, 2)}` }]
                     }
                 } catch (error: unknown) {
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
@@ -1259,9 +1249,9 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
 }
 
 export default new OAuthProvider({
-    apiRoute: '/sse',
+    apiRoute: '/mcp',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    apiHandler: TodoistMCP.mount('/sse') as any,
+    apiHandler: TodoistMCP.serve('/mcp') as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     defaultHandler: TodoistAuthHandler as any,
     authorizeEndpoint: '/authorize',
