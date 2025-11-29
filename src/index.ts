@@ -26,7 +26,8 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
         'create_task', 'get_tasks', 'update_task', 'close_task',
         'get_projects', 'get_project', 'move_task', 'get_tasks_by_filter',
         'create_project', 'update_project', 'get_sections', 'delete_task', 'reopen_task',
-        'get_labels', 'create_section', 'update_section'
+        'get_labels', 'create_section', 'update_section',
+        'get_completed_tasks_by_completion_date', 'get_completed_tasks_by_due_date'
     ])
 
     // Helper method to determine if a tool should be registered based on filtering config
