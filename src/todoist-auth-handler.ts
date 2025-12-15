@@ -56,11 +56,10 @@ app.get('/callback', async (c) => {
     })
     if (errResponse) return errResponse
 
-    // Get user info using Todoist API client
+    // Get user info using Todoist Sync API client
     const client = new TodoistClient(accessToken)
     try {
-        const userData = await client.get('/user')
-        const { full_name, email } = userData as { full_name: string; email: string }
+        const { full_name, email } = await client.getCurrentUser()
 
         // Return back to the MCP client a new token
         const { redirectTo } = await c.env.OAUTH_PROVIDER.completeAuthorization({

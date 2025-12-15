@@ -768,37 +768,30 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
             )
         }
 
-        // Completed task queries (non-essential - removed in minimal tool set)
+        // Completed task queries - uses Sync API /completed/get_all endpoint
         if (this.shouldRegisterTool('get_completed_tasks_by_completion_date')) {
             this.server.tool(
                 'get_completed_tasks_by_completion_date',
                 'Get tasks that were completed within a specific date range, based on when they were actually completed. Supports filtering and pagination.',
                 {
-                    since: z.string().describe('Start date for completed tasks in YYYY-MM-DD format'),
-                    until: z.string().describe('End date for completed tasks in YYYY-MM-DD format'),
+                    since: z.string().optional().describe('Start date for completed tasks in ISO 8601 format (e.g., 2024-01-01T00:00:00)'),
+                    until: z.string().optional().describe('End date for completed tasks in ISO 8601 format (e.g., 2024-12-31T23:59:59)'),
                     project_id: z.string().optional().describe('Filter by specific project ID'),
                     section_id: z.string().optional().describe('Filter by specific section ID'),
-                    parent_id: z.string().optional().describe('Filter by parent task ID'),
-                    filter_query: z.string().optional().describe('Filter using Todoist query syntax'),
-                    filter_lang: z.string().optional().describe('Language for filter query (2-letter code)'),
-                    workspace_id: z.number().optional().describe('Filter by workspace ID'),
-                    limit: z.number().min(1).max(50).optional().describe('Number of tasks to return (max 50, default: 50)'),
-                    cursor: z.string().optional().describe('Pagination cursor for next page')
+                    limit: z.number().min(1).max(200).optional().describe('Number of tasks to return (max 200, default: 30)'),
+                    offset: z.number().optional().describe('Pagination offset for next page')
                 },
-                async ({ since, until, project_id, section_id, parent_id, filter_query, filter_lang, workspace_id, limit, cursor }) => {
+                async ({ since, until, project_id, section_id, limit, offset }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
-                        const params: Record<string, unknown> = { since, until }
-                        if (project_id) params.project_id = project_id
-                        if (section_id) params.section_id = section_id
-                        if (parent_id) params.parent_id = parent_id
-                        if (filter_query) params.filter_query = filter_query
-                        if (filter_lang) params.filter_lang = filter_lang
-                        if (workspace_id) params.workspace_id = workspace_id
-                        if (limit) params.limit = limit
-                        if (cursor) params.cursor = cursor
-
-                        const response = await client.get('/tasks/completed/by_completion_date', params)
+                        const response = await client.getCompletedTasks({
+                            since,
+                            until,
+                            project_id,
+                            section_id,
+                            limit,
+                            offset
+                        })
                         return {
                             content: [{ type: 'text', text: JSON.stringify(response, null, 2) }]
                         }
@@ -813,43 +806,38 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
             )
         }
 
+        // Remove get_completed_tasks_by_due_date as the Sync API doesn't support filtering by due date
+        // Keep alias for backwards compatibility but use same implementation
         if (this.shouldRegisterTool('get_completed_tasks_by_due_date')) {
             this.server.tool(
                 'get_completed_tasks_by_due_date',
-                'Get completed tasks that were originally due within a specific date range. This shows tasks by their original due date, not when they were completed.',
+                'Get completed tasks. Note: This uses the same API as get_completed_tasks_by_completion_date - Todoist Sync API returns tasks by completion date, not due date.',
                 {
-                    since: z.string().describe('Start due date for completed tasks in YYYY-MM-DD format'),
-                    until: z.string().describe('End due date for completed tasks in YYYY-MM-DD format'),
+                    since: z.string().optional().describe('Start date in ISO 8601 format (e.g., 2024-01-01T00:00:00)'),
+                    until: z.string().optional().describe('End date in ISO 8601 format (e.g., 2024-12-31T23:59:59)'),
                     project_id: z.string().optional().describe('Filter by specific project ID'),
                     section_id: z.string().optional().describe('Filter by specific section ID'),
-                    parent_id: z.string().optional().describe('Filter by parent task ID'),
-                    filter_query: z.string().optional().describe('Filter using Todoist query syntax'),
-                    filter_lang: z.string().optional().describe('Language for filter query (2-letter code)'),
-                    workspace_id: z.number().optional().describe('Filter by workspace ID'),
-                    limit: z.number().min(1).max(50).optional().describe('Number of tasks to return (max 50, default: 50)'),
-                    cursor: z.string().optional().describe('Pagination cursor for next page')
+                    limit: z.number().min(1).max(200).optional().describe('Number of tasks to return (max 200, default: 30)'),
+                    offset: z.number().optional().describe('Pagination offset for next page')
                 },
-                async ({ since, until, project_id, section_id, parent_id, filter_query, filter_lang, workspace_id, limit, cursor }) => {
+                async ({ since, until, project_id, section_id, limit, offset }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
-                        const params: Record<string, unknown> = { since, until }
-                        if (project_id) params.project_id = project_id
-                        if (section_id) params.section_id = section_id
-                        if (parent_id) params.parent_id = parent_id
-                        if (filter_query) params.filter_query = filter_query
-                        if (filter_lang) params.filter_lang = filter_lang
-                        if (workspace_id) params.workspace_id = workspace_id
-                        if (limit) params.limit = limit
-                        if (cursor) params.cursor = cursor
-
-                        const response = await client.get('/tasks/completed/by_due_date', params)
+                        const response = await client.getCompletedTasks({
+                            since,
+                            until,
+                            project_id,
+                            section_id,
+                            limit,
+                            offset
+                        })
                         return {
                             content: [{ type: 'text', text: JSON.stringify(response, null, 2) }]
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
-                            content: [{ type: 'text', text: `Error fetching completed tasks by due date: ${errorMessage}` }],
+                            content: [{ type: 'text', text: `Error fetching completed tasks: ${errorMessage}` }],
                             isError: true
                         }
                     }

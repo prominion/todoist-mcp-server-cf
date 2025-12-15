@@ -1,5 +1,6 @@
 const API_BASE_URL = 'https://api.todoist.com/rest/v2'
 const SYNC_API_URL = 'https://api.todoist.com/sync/v9/sync'
+const SYNC_API_BASE_URL = 'https://api.todoist.com/sync/v9'
 
 export class TodoistClient {
     private readonly apiToken: string
@@ -64,6 +65,30 @@ export class TodoistClient {
         })
 
         return this.handleResponse(response)
+    }
+
+    /**
+     * Get current user info using the Sync API.
+     * The REST v9 API expects application/x-www-form-urlencoded body with
+     * sync_token and resource_types parameters.
+     */
+    async getCurrentUser(): Promise<{ full_name: string; email: string }> {
+        const body = new URLSearchParams({
+            sync_token: '*',
+            resource_types: '["user"]',
+        }).toString()
+
+        const response = await fetch(SYNC_API_URL, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${this.apiToken}`,
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body,
+        })
+
+        const data = (await this.handleResponse(response)) as { user: { full_name: string; email: string } }
+        return data.user
     }
 
     /**
@@ -145,5 +170,41 @@ export class TodoistClient {
         }
 
         return result
+    }
+
+    /**
+     * Get completed tasks using Sync API
+     * @param params - Query parameters for filtering completed tasks
+     * @returns Completed tasks response
+     */
+    async getCompletedTasks(params: {
+        project_id?: string
+        section_id?: string
+        limit?: number
+        offset?: number
+        since?: string
+        until?: string
+        annotate_notes?: boolean
+    } = {}): Promise<unknown> {
+        const url = `${SYNC_API_BASE_URL}/completed/get_all`
+
+        const queryParams = new URLSearchParams()
+        for (const [key, value] of Object.entries(params)) {
+            if (value !== undefined && value !== null) {
+                queryParams.append(key, String(value))
+            }
+        }
+
+        const queryString = queryParams.toString()
+        const fullUrl = queryString ? `${url}?${queryString}` : url
+
+        console.log(`Making GET request to Sync API: ${fullUrl}`)
+
+        const response = await fetch(fullUrl, {
+            method: 'GET',
+            headers: this.getHeaders(),
+        })
+
+        return this.handleResponse(response)
     }
 }

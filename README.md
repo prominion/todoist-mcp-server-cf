@@ -58,7 +58,7 @@ This MCP server provides **39 tools** (14 essential tools enabled by default) co
 
 ## 🔧 Technical Specifications
 
-- **Protocol**: Model Context Protocol (MCP) over Server-Sent Events (SSE)
+- **Protocol**: Model Context Protocol (MCP) over Streamable HTTP
 - **Authentication**: OAuth 2.0 with Todoist
 - **Deployment**: Cloudflare Workers with global edge distribution
 - **Storage**: Cloudflare KV for secure token storage
@@ -67,7 +67,7 @@ This MCP server provides **39 tools** (14 essential tools enabled by default) co
 
 ## 🌐 How to Access
 
-**Server URL**: `https://<your-cloudflare-worker-url>/sse`
+**Server URL**: `https://<your-cloudflare-worker-url>/mcp`
 
 ### Usage Options:
 - **[Cloudflare AI Playground](https://playground.ai.cloudflare.com/)**: Direct browser access
