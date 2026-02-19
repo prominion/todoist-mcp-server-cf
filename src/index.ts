@@ -19,15 +19,28 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
     })
 
     // Tool filtering configuration to reduce context token usage
-    // Setting MINIMAL_TOOL_SET to true exposes only 16 essential tools (~12-15k tokens)
-    // Setting it to false exposes all 39 tools (~27k tokens)
+    // Setting MINIMAL_TOOL_SET to true exposes only 18 essential tools (~12-15k tokens)
+    // Setting it to false exposes all 43 tools (~27k tokens)
     private static readonly MINIMAL_TOOL_SET = true
     private static readonly ESSENTIAL_TOOLS = new Set([
-        'create_task', 'get_tasks', 'update_task', 'close_task',
-        'get_projects', 'get_project', 'move_task', 'get_tasks_by_filter',
-        'create_project', 'update_project', 'get_sections', 'delete_task', 'reopen_task',
-        'get_labels', 'create_section', 'update_section',
-        'get_completed_tasks_by_completion_date', 'get_completed_tasks_by_due_date'
+        'create_task',
+        'get_tasks',
+        'update_task',
+        'close_task',
+        'get_projects',
+        'get_project',
+        'move_task',
+        'get_tasks_by_filter',
+        'create_project',
+        'update_project',
+        'get_sections',
+        'delete_task',
+        'reopen_task',
+        'get_labels',
+        'create_section',
+        'update_section',
+        'get_completed_tasks_by_completion_date',
+        'get_completed_tasks_by_due_date',
     ])
 
     // Helper method to determine if a tool should be registered based on filtering config
@@ -48,32 +61,26 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
         // Get tasks by filter
         this.server.tool(
             'get_tasks_by_filter',
-            'Get tasks that match a Todoist filter query',
+            'Get tasks that match a Todoist filter query. Returns paginated results with full task objects.',
             {
                 filter: z
                     .string()
                     .describe(
                         'Filter by any [supported filter](https://todoist.com/help/articles/introduction-to-filters-V98wIH). Multiple filters (using the comma `,` operator) are not supported.'
                     ),
+                cursor: z.string().optional().describe('Pagination cursor from previous response for fetching next page'),
+                limit: z.number().min(1).max(200).optional().describe('Number of tasks to return per page (default: 50, max: 200)'),
             },
-            async ({ filter }) => {
+            async ({ filter, cursor, limit }) => {
                 const client = new TodoistClient(this.props.accessToken)
                 try {
-                    const tasks = (await client.get('/tasks', { filter })) as Array<{
-                        content: string
-                        description: string
-                        due?: { date: string }
-                    }>
+                    const params: Record<string, unknown> = { filter }
+                    if (cursor) params.cursor = cursor
+                    if (limit !== undefined) params.limit = limit
 
-                    // Extract required fields and format the response
-                    const formattedTasks = tasks.map((task) => ({
-                        content: task.content,
-                        description: task.description,
-                        due_date: task.due?.date || null,
-                    }))
-
+                    const response = await client.get('/tasks/by_filter', params)
                     return {
-                        content: [{ type: 'text', text: JSON.stringify(formattedTasks, null, 2) }],
+                        content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
                     }
                 } catch (error: unknown) {
                     console.error('Failed to fetch tasks:', error)
@@ -96,13 +103,33 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 name: z.string().describe('Name of the project to create'),
                 description: z.string().optional().describe('Optional description for the project'),
                 parent_id: z.string().optional().describe('ID of parent project to nest this project under'),
-                color: z.enum([
-                    'berry_red', 'red', 'orange', 'yellow', 'olive_green', 'lime_green', 
-                    'green', 'mint_green', 'teal', 'sky_blue', 'light_blue', 'blue', 
-                    'grape', 'violet', 'lavender', 'magenta', 'salmon', 'charcoal', 'grey', 'taupe'
-                ]).optional().describe('Color of the project icon'),
+                color: z
+                    .enum([
+                        'berry_red',
+                        'red',
+                        'orange',
+                        'yellow',
+                        'olive_green',
+                        'lime_green',
+                        'green',
+                        'mint_green',
+                        'teal',
+                        'sky_blue',
+                        'light_blue',
+                        'blue',
+                        'grape',
+                        'violet',
+                        'lavender',
+                        'magenta',
+                        'salmon',
+                        'charcoal',
+                        'grey',
+                        'taupe',
+                    ])
+                    .optional()
+                    .describe('Color of the project icon'),
                 is_favorite: z.boolean().optional().describe('Whether to mark this project as a favorite'),
-                view_style: z.enum(['list', 'board']).optional().describe('Project view style - list or board (kanban) view')
+                view_style: z.enum(['list', 'board']).optional().describe('Project view style - list or board (kanban) view'),
             },
             async ({ name, description, parent_id, color, is_favorite, view_style }) => {
                 const client = new TodoistClient(this.props.accessToken)
@@ -113,16 +140,16 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                         parent_id,
                         color,
                         is_favorite,
-                        view_style
+                        view_style,
                     })
                     return {
-                        content: [{ type: 'text', text: JSON.stringify(project, null, 2) }]
+                        content: [{ type: 'text', text: JSON.stringify(project, null, 2) }],
                     }
                 } catch (error: unknown) {
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                     return {
                         content: [{ type: 'text', text: `Error creating project: ${errorMessage}` }],
-                        isError: true
+                        isError: true,
                     }
                 }
             }
@@ -134,7 +161,7 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
             'Get all active projects from Todoist. Returns a list of projects with their properties. Supports pagination.',
             {
                 cursor: z.string().optional().describe('Pagination cursor from previous response for fetching next page'),
-                limit: z.number().min(1).max(200).optional().describe('Number of projects to return per page (default: 50, max: 200)')
+                limit: z.number().min(1).max(200).optional().describe('Number of projects to return per page (default: 50, max: 200)'),
             },
             async ({ cursor, limit }) => {
                 const client = new TodoistClient(this.props.accessToken)
@@ -142,16 +169,16 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                     const params: Record<string, unknown> = {}
                     if (cursor) params.cursor = cursor
                     if (limit) params.limit = limit
-                    
+
                     const response = await client.get('/projects', params)
                     return {
-                        content: [{ type: 'text', text: JSON.stringify(response, null, 2) }]
+                        content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
                     }
                 } catch (error: unknown) {
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                     return {
                         content: [{ type: 'text', text: `Error fetching projects: ${errorMessage}` }],
-                        isError: true
+                        isError: true,
                     }
                 }
             }
@@ -162,20 +189,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
             'get_project',
             'Get a specific project by ID from Todoist. Returns detailed information about the project.',
             {
-                project_id: z.string().describe('ID of the project to retrieve')
+                project_id: z.string().describe('ID of the project to retrieve'),
             },
             async ({ project_id }) => {
                 const client = new TodoistClient(this.props.accessToken)
                 try {
                     const project = await client.get(`/projects/${project_id}`)
                     return {
-                        content: [{ type: 'text', text: JSON.stringify(project, null, 2) }]
+                        content: [{ type: 'text', text: JSON.stringify(project, null, 2) }],
                     }
                 } catch (error: unknown) {
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                     return {
                         content: [{ type: 'text', text: `Error fetching project: ${errorMessage}` }],
-                        isError: true
+                        isError: true,
                     }
                 }
             }
@@ -189,13 +216,33 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 project_id: z.string().describe('ID of the project to update'),
                 name: z.string().optional().describe('New name for the project'),
                 description: z.string().optional().describe('New description for the project'),
-                color: z.enum([
-                    'berry_red', 'red', 'orange', 'yellow', 'olive_green', 'lime_green', 
-                    'green', 'mint_green', 'teal', 'sky_blue', 'light_blue', 'blue', 
-                    'grape', 'violet', 'lavender', 'magenta', 'salmon', 'charcoal', 'grey', 'taupe'
-                ]).optional().describe('New color for the project icon'),
+                color: z
+                    .enum([
+                        'berry_red',
+                        'red',
+                        'orange',
+                        'yellow',
+                        'olive_green',
+                        'lime_green',
+                        'green',
+                        'mint_green',
+                        'teal',
+                        'sky_blue',
+                        'light_blue',
+                        'blue',
+                        'grape',
+                        'violet',
+                        'lavender',
+                        'magenta',
+                        'salmon',
+                        'charcoal',
+                        'grey',
+                        'taupe',
+                    ])
+                    .optional()
+                    .describe('New color for the project icon'),
                 is_favorite: z.boolean().optional().describe('Whether to mark this project as a favorite'),
-                view_style: z.enum(['list', 'board']).optional().describe('Project view style - list or board (kanban) view')
+                view_style: z.enum(['list', 'board']).optional().describe('Project view style - list or board (kanban) view'),
             },
             async ({ project_id, name, description, color, is_favorite, view_style }) => {
                 const client = new TodoistClient(this.props.accessToken)
@@ -206,16 +253,16 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                     if (color !== undefined) updateData.color = color
                     if (is_favorite !== undefined) updateData.is_favorite = is_favorite
                     if (view_style !== undefined) updateData.view_style = view_style
-                    
+
                     const project = await client.post(`/projects/${project_id}`, updateData)
                     return {
-                        content: [{ type: 'text', text: JSON.stringify(project, null, 2) }]
+                        content: [{ type: 'text', text: JSON.stringify(project, null, 2) }],
                     }
                 } catch (error: unknown) {
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                     return {
                         content: [{ type: 'text', text: `Error updating project: ${errorMessage}` }],
-                        isError: true
+                        isError: true,
                     }
                 }
             }
@@ -227,20 +274,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'delete_project',
                 'Delete a project from Todoist. WARNING: This will permanently delete the project and all its sections and tasks.',
                 {
-                    project_id: z.string().describe('ID of the project to delete')
+                    project_id: z.string().describe('ID of the project to delete'),
                 },
                 async ({ project_id }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
                         await client.delete(`/projects/${project_id}`)
                         return {
-                            content: [{ type: 'text', text: 'Project deleted successfully' }]
+                            content: [{ type: 'text', text: 'Project deleted successfully' }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error deleting project: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -252,20 +299,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'archive_project',
                 'Archive a project in Todoist. Archived projects are hidden from the active projects list but can be unarchived later.',
                 {
-                    project_id: z.string().describe('ID of the project to archive')
+                    project_id: z.string().describe('ID of the project to archive'),
                 },
                 async ({ project_id }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
                         await client.post(`/projects/${project_id}/archive`)
                         return {
-                            content: [{ type: 'text', text: 'Project archived successfully' }]
+                            content: [{ type: 'text', text: 'Project archived successfully' }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error archiving project: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -277,20 +324,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'unarchive_project',
                 'Unarchive a previously archived project in Todoist. This will restore the project to the active projects list.',
                 {
-                    project_id: z.string().describe('ID of the project to unarchive')
+                    project_id: z.string().describe('ID of the project to unarchive'),
                 },
                 async ({ project_id }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
                         await client.post(`/projects/${project_id}/unarchive`)
                         return {
-                            content: [{ type: 'text', text: 'Project unarchived successfully' }]
+                            content: [{ type: 'text', text: 'Project unarchived successfully' }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error unarchiving project: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -302,20 +349,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'get_project_collaborators',
                 'Get all collaborators for a shared project in Todoist. Returns a list of users who have access to the project.',
                 {
-                    project_id: z.string().describe('ID of the project to get collaborators for')
+                    project_id: z.string().describe('ID of the project to get collaborators for'),
                 },
                 async ({ project_id }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
                         const collaborators = await client.get(`/projects/${project_id}/collaborators`)
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(collaborators, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(collaborators, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error fetching collaborators: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -332,7 +379,7 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 {
                     name: z.string().describe('Name of the section to create'),
                     project_id: z.string().describe('ID of the project where the section will be created'),
-                    order: z.number().optional().describe('Position of the section within the project (optional)')
+                    order: z.number().optional().describe('Position of the section within the project (optional)'),
                 },
                 async ({ name, project_id, order }) => {
                     const client = new TodoistClient(this.props.accessToken)
@@ -340,16 +387,16 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                         const section = await client.post('/sections', {
                             name,
                             project_id,
-                            order
+                            order,
                         })
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(section, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(section, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error creating section: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -363,7 +410,7 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
             {
                 project_id: z.string().optional().describe('Filter sections by specific project ID (optional)'),
                 cursor: z.string().optional().describe('Pagination cursor from previous response for fetching next page'),
-                limit: z.number().min(1).max(200).optional().describe('Number of sections to return per page (default: 50, max: 200)')
+                limit: z.number().min(1).max(200).optional().describe('Number of sections to return per page (default: 50, max: 200)'),
             },
             async ({ project_id, cursor, limit }) => {
                 const client = new TodoistClient(this.props.accessToken)
@@ -375,13 +422,13 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
 
                     const response = await client.get('/sections', params)
                     return {
-                        content: [{ type: 'text', text: JSON.stringify(response, null, 2) }]
+                        content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
                     }
                 } catch (error: unknown) {
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                     return {
                         content: [{ type: 'text', text: `Error fetching sections: ${errorMessage}` }],
-                        isError: true
+                        isError: true,
                     }
                 }
             }
@@ -392,20 +439,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'get_section',
                 'Get a specific section by ID from Todoist. Returns detailed information about the section.',
                 {
-                    section_id: z.string().describe('ID of the section to retrieve')
+                    section_id: z.string().describe('ID of the section to retrieve'),
                 },
                 async ({ section_id }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
                         const section = await client.get(`/sections/${section_id}`)
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(section, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(section, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error fetching section: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -418,20 +465,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'Update an existing section in Todoist. Currently only the section name can be updated.',
                 {
                     section_id: z.string().describe('ID of the section to update'),
-                    name: z.string().describe('New name for the section')
+                    name: z.string().describe('New name for the section'),
                 },
                 async ({ section_id, name }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
                         const section = await client.post(`/sections/${section_id}`, { name })
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(section, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(section, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error updating section: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -443,20 +490,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'delete_section',
                 'Delete a section from Todoist. WARNING: This will permanently delete the section and all tasks within it.',
                 {
-                    section_id: z.string().describe('ID of the section to delete')
+                    section_id: z.string().describe('ID of the section to delete'),
                 },
                 async ({ section_id }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
                         await client.delete(`/sections/${section_id}`)
                         return {
-                            content: [{ type: 'text', text: 'Section deleted successfully' }]
+                            content: [{ type: 'text', text: 'Section deleted successfully' }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error deleting section: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -480,34 +527,50 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 due_string: z.string().optional().describe('Due date in natural language (e.g., "tomorrow at 3pm", "next Monday")'),
                 due_date: z.string().optional().describe('Due date in YYYY-MM-DD format'),
                 due_datetime: z.string().optional().describe('Due date and time in ISO datetime format (e.g., "2023-12-31T15:00:00Z")'),
-                deadline_date: z.string().optional().describe('Deadline date in YYYY-MM-DD format (when the task must be completed by, relative to user timezone)'),
-                assignee_id: z.string().optional().describe('ID of the user to assign this task to (for shared projects)')
+                deadline_date: z
+                    .string()
+                    .optional()
+                    .describe('Deadline date in YYYY-MM-DD format (when the task must be completed by, relative to user timezone)'),
+                assignee_id: z.string().optional().describe('ID of the user to assign this task to (for shared projects)'),
             },
-            async ({ content, description, project_id, section_id, parent_id, labels, priority, due_string, due_date, due_datetime, deadline_date, assignee_id }) => {
+            async ({
+                content,
+                description,
+                project_id,
+                section_id,
+                parent_id,
+                labels,
+                priority,
+                due_string,
+                due_date,
+                due_datetime,
+                deadline_date,
+                assignee_id,
+            }) => {
                 const client = new TodoistClient(this.props.accessToken)
                 try {
                     const taskData: Record<string, unknown> = { content }
-                    if (description) taskData.description = description
-                    if (project_id) taskData.project_id = project_id
-                    if (section_id) taskData.section_id = section_id
-                    if (parent_id) taskData.parent_id = parent_id
-                    if (labels) taskData.labels = labels
-                    if (priority) taskData.priority = priority
-                    if (due_string) taskData.due_string = due_string
-                    if (due_date) taskData.due_date = due_date
-                    if (due_datetime) taskData.due_datetime = due_datetime
-                    if (deadline_date) taskData.deadline_date = deadline_date
-                    if (assignee_id) taskData.assignee_id = assignee_id
+                    if (description !== undefined) taskData.description = description
+                    if (project_id !== undefined) taskData.project_id = project_id
+                    if (section_id !== undefined) taskData.section_id = section_id
+                    if (parent_id !== undefined) taskData.parent_id = parent_id
+                    if (labels !== undefined) taskData.labels = labels
+                    if (priority !== undefined) taskData.priority = priority
+                    if (due_string !== undefined) taskData.due_string = due_string
+                    if (due_date !== undefined) taskData.due_date = due_date
+                    if (due_datetime !== undefined) taskData.due_datetime = due_datetime
+                    if (deadline_date !== undefined) taskData.deadline_date = deadline_date
+                    if (assignee_id !== undefined) taskData.assignee_id = assignee_id
 
                     const task = await client.post('/tasks', taskData)
                     return {
-                        content: [{ type: 'text', text: JSON.stringify(task, null, 2) }]
+                        content: [{ type: 'text', text: JSON.stringify(task, null, 2) }],
                     }
                 } catch (error: unknown) {
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                     return {
                         content: [{ type: 'text', text: `Error creating task: ${errorMessage}` }],
-                        isError: true
+                        isError: true,
                     }
                 }
             }
@@ -524,7 +587,7 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 label: z.string().optional().describe('Filter tasks by label name'),
                 ids: z.string().optional().describe('Comma-separated list of specific task IDs to retrieve'),
                 cursor: z.string().optional().describe('Pagination cursor from previous response for fetching next page'),
-                limit: z.number().min(1).max(200).optional().describe('Number of tasks to return per page (default: 50, max: 200)')
+                limit: z.number().min(1).max(200).optional().describe('Number of tasks to return per page (default: 50, max: 200)'),
             },
             async ({ project_id, section_id, parent_id, label, ids, cursor, limit }) => {
                 const client = new TodoistClient(this.props.accessToken)
@@ -537,16 +600,16 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                     if (ids) params.ids = ids
                     if (cursor) params.cursor = cursor
                     if (limit) params.limit = limit
-                    
+
                     const response = await client.get('/tasks', params)
                     return {
-                        content: [{ type: 'text', text: JSON.stringify(response, null, 2) }]
+                        content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
                     }
                 } catch (error: unknown) {
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                     return {
                         content: [{ type: 'text', text: `Error fetching tasks: ${errorMessage}` }],
-                        isError: true
+                        isError: true,
                     }
                 }
             }
@@ -558,20 +621,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'get_task',
                 'Get a specific active task by ID from Todoist. Returns detailed information about the task including its content, due date, labels, etc.',
                 {
-                    task_id: z.string().describe('ID of the task to retrieve')
+                    task_id: z.string().describe('ID of the task to retrieve'),
                 },
                 async ({ task_id }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
                         const task = await client.get(`/tasks/${task_id}`)
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(task, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(task, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error fetching task: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -591,8 +654,11 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 due_string: z.string().optional().describe('New due date in natural language'),
                 due_date: z.string().optional().describe('New due date in YYYY-MM-DD format'),
                 due_datetime: z.string().optional().describe('New due date and time in ISO datetime format'),
-                deadline_date: z.string().optional().describe('New deadline date in YYYY-MM-DD format (when the task must be completed by, relative to user timezone)'),
-                assignee_id: z.string().optional().describe('ID of the user to assign this task to')
+                deadline_date: z
+                    .string()
+                    .optional()
+                    .describe('New deadline date in YYYY-MM-DD format (when the task must be completed by, relative to user timezone)'),
+                assignee_id: z.string().optional().describe('ID of the user to assign this task to'),
             },
             async ({ task_id, content, description, labels, priority, due_string, due_date, due_datetime, deadline_date, assignee_id }) => {
                 const client = new TodoistClient(this.props.accessToken)
@@ -610,13 +676,13 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
 
                     const task = await client.post(`/tasks/${task_id}`, updateData)
                     return {
-                        content: [{ type: 'text', text: JSON.stringify(task, null, 2) }]
+                        content: [{ type: 'text', text: JSON.stringify(task, null, 2) }],
                     }
                 } catch (error: unknown) {
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                     return {
                         content: [{ type: 'text', text: `Error updating task: ${errorMessage}` }],
-                        isError: true
+                        isError: true,
                     }
                 }
             }
@@ -627,20 +693,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
             'delete_task',
             'Delete a task from Todoist. WARNING: This will permanently delete the task and cannot be undone.',
             {
-                task_id: z.string().describe('ID of the task to delete')
+                task_id: z.string().describe('ID of the task to delete'),
             },
             async ({ task_id }) => {
                 const client = new TodoistClient(this.props.accessToken)
                 try {
                     await client.delete(`/tasks/${task_id}`)
                     return {
-                        content: [{ type: 'text', text: 'Task deleted successfully' }]
+                        content: [{ type: 'text', text: 'Task deleted successfully' }],
                     }
                 } catch (error: unknown) {
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                     return {
                         content: [{ type: 'text', text: `Error deleting task: ${errorMessage}` }],
-                        isError: true
+                        isError: true,
                     }
                 }
             }
@@ -651,20 +717,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
             'close_task',
             'Mark a task as completed in Todoist. The task will be moved to the completed tasks list and can be reopened later if needed.',
             {
-                task_id: z.string().describe('ID of the task to mark as completed')
+                task_id: z.string().describe('ID of the task to mark as completed'),
             },
             async ({ task_id }) => {
                 const client = new TodoistClient(this.props.accessToken)
                 try {
                     await client.post(`/tasks/${task_id}/close`)
                     return {
-                        content: [{ type: 'text', text: 'Task completed successfully' }]
+                        content: [{ type: 'text', text: 'Task completed successfully' }],
                     }
                 } catch (error: unknown) {
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                     return {
                         content: [{ type: 'text', text: `Error completing task: ${errorMessage}` }],
-                        isError: true
+                        isError: true,
                     }
                 }
             }
@@ -675,20 +741,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
             'reopen_task',
             'Reopen a previously completed task in Todoist. This will move the task back to your active task list.',
             {
-                task_id: z.string().describe('ID of the completed task to reopen')
+                task_id: z.string().describe('ID of the completed task to reopen'),
             },
             async ({ task_id }) => {
                 const client = new TodoistClient(this.props.accessToken)
                 try {
                     await client.post(`/tasks/${task_id}/reopen`)
                     return {
-                        content: [{ type: 'text', text: 'Task reopened successfully' }]
+                        content: [{ type: 'text', text: 'Task reopened successfully' }],
                     }
                 } catch (error: unknown) {
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                     return {
                         content: [{ type: 'text', text: `Error reopening task: ${errorMessage}` }],
-                        isError: true
+                        isError: true,
                     }
                 }
             }
@@ -700,9 +766,22 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
             'Move a single task to a different project, section, or make it a sub-task of another task. You must provide at least one destination: project_id, section_id, or parent_id. This is the primary tool for reorganizing individual tasks.',
             {
                 task_id: z.string().describe('ID of the task to move'),
-                project_id: z.string().optional().describe('ID of the destination project (optional - provide this to move task to a different project)'),
-                section_id: z.string().optional().describe('ID of the destination section within a project (optional - provide this to move task to a specific section)'),
-                parent_id: z.string().optional().describe('ID of the parent task to make this task a subtask (optional - provide this to create a parent-child relationship)')
+                project_id: z
+                    .string()
+                    .optional()
+                    .describe('ID of the destination project (optional - provide this to move task to a different project)'),
+                section_id: z
+                    .string()
+                    .optional()
+                    .describe(
+                        'ID of the destination section within a project (optional - provide this to move task to a specific section)'
+                    ),
+                parent_id: z
+                    .string()
+                    .optional()
+                    .describe(
+                        'ID of the parent task to make this task a subtask (optional - provide this to create a parent-child relationship)'
+                    ),
             },
             async ({ task_id, project_id, section_id, parent_id }) => {
                 const client = new TodoistClient(this.props.accessToken)
@@ -710,25 +789,30 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                     // Validate that at least one destination is provided
                     if (!project_id && !section_id && !parent_id) {
                         return {
-                            content: [{ type: 'text', text: 'Error: At least one destination must be provided (project_id, section_id, or parent_id)' }],
-                            isError: true
+                            content: [
+                                {
+                                    type: 'text',
+                                    text: 'Error: At least one destination must be provided (project_id, section_id, or parent_id)',
+                                },
+                            ],
+                            isError: true,
                         }
                     }
 
-                    const destination: { project_id?: string; section_id?: string; parent_id?: string } = {}
-                    if (project_id) destination.project_id = project_id
-                    if (section_id) destination.section_id = section_id
-                    if (parent_id) destination.parent_id = parent_id
+                    const moveData: Record<string, unknown> = {}
+                    if (project_id) moveData.project_id = project_id
+                    if (section_id) moveData.section_id = section_id
+                    if (parent_id) moveData.parent_id = parent_id
 
-                    const result = await client.moveTask(task_id, destination)
+                    const result = await client.post(`/tasks/${task_id}/move`, moveData)
                     return {
-                        content: [{ type: 'text', text: `Task moved successfully.\n${JSON.stringify(result, null, 2)}` }]
+                        content: [{ type: 'text', text: `Task moved successfully.\n${JSON.stringify(result, null, 2)}` }],
                     }
                 } catch (error: unknown) {
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                     return {
                         content: [{ type: 'text', text: `Error moving task: ${errorMessage}` }],
-                        isError: true
+                        isError: true,
                     }
                 }
             }
@@ -740,10 +824,14 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'quick_add_task',
                 'Quickly add a task using natural language parsing. This allows you to create tasks with due dates, projects, labels, and priorities using natural language (e.g., "Call mom tomorrow at 5pm #personal @phone").',
                 {
-                    text: z.string().describe('Task text with natural language parsing - can include due dates, project names with #, labels with @, and priorities with p1-p4'),
+                    text: z
+                        .string()
+                        .describe(
+                            'Task text with natural language parsing - can include due dates, project names with #, labels with @, and priorities with p1-p4'
+                        ),
                     note: z.string().optional().describe('Additional note/description for the task'),
                     reminder: z.string().optional().describe('When to be reminded of this task in natural language'),
-                    auto_reminder: z.boolean().optional().describe('Add default reminder for tasks with due times (default: false)')
+                    auto_reminder: z.boolean().optional().describe('Add default reminder for tasks with due times (default: false)'),
                 },
                 async ({ text, note, reminder, auto_reminder }) => {
                     const client = new TodoistClient(this.props.accessToken)
@@ -753,22 +841,22 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                         if (reminder) quickData.reminder = reminder
                         if (auto_reminder !== undefined) quickData.auto_reminder = auto_reminder
 
-                        const task = await client.post('/tasks/quick', quickData)
+                        const task = await client.post('/quick_add', quickData)
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(task, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(task, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error creating quick task: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
             )
         }
 
-        // Completed task queries - uses Sync API /completed/get_all endpoint
+        // Completed task queries
         if (this.shouldRegisterTool('get_completed_tasks_by_completion_date')) {
             this.server.tool(
                 'get_completed_tasks_by_completion_date',
@@ -779,66 +867,67 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                     project_id: z.string().optional().describe('Filter by specific project ID'),
                     section_id: z.string().optional().describe('Filter by specific section ID'),
                     limit: z.number().min(1).max(200).optional().describe('Number of tasks to return (max 200, default: 30)'),
-                    offset: z.number().optional().describe('Pagination offset for next page')
+                    offset: z.number().optional().describe('Pagination offset for next page'),
                 },
                 async ({ since, until, project_id, section_id, limit, offset }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
-                        const response = await client.getCompletedTasks({
-                            since,
-                            until,
-                            project_id,
-                            section_id,
-                            limit,
-                            offset
-                        })
+                        const params: Record<string, unknown> = {}
+                        if (since !== undefined) params.since = since
+                        if (until !== undefined) params.until = until
+                        if (project_id !== undefined) params.project_id = project_id
+                        if (section_id !== undefined) params.section_id = section_id
+                        if (limit !== undefined) params.limit = limit
+                        if (offset !== undefined) params.offset = offset
+
+                        const response = await client.get('/tasks/completed_by_completion_date', params)
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(response, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error fetching completed tasks: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
             )
         }
 
-        // Remove get_completed_tasks_by_due_date as the Sync API doesn't support filtering by due date
-        // Keep alias for backwards compatibility but use same implementation
+        // Get completed tasks filtered by due date
         if (this.shouldRegisterTool('get_completed_tasks_by_due_date')) {
             this.server.tool(
                 'get_completed_tasks_by_due_date',
-                'Get completed tasks. Note: This uses the same API as get_completed_tasks_by_completion_date - Todoist Sync API returns tasks by completion date, not due date.',
+                'Get completed tasks filtered by their due date. Unlike get_completed_tasks_by_completion_date, this filters based on when tasks were originally due, not when they were completed.',
                 {
                     since: z.string().optional().describe('Start date in ISO 8601 format (e.g., 2024-01-01T00:00:00)'),
                     until: z.string().optional().describe('End date in ISO 8601 format (e.g., 2024-12-31T23:59:59)'),
                     project_id: z.string().optional().describe('Filter by specific project ID'),
                     section_id: z.string().optional().describe('Filter by specific section ID'),
                     limit: z.number().min(1).max(200).optional().describe('Number of tasks to return (max 200, default: 30)'),
-                    offset: z.number().optional().describe('Pagination offset for next page')
+                    offset: z.number().optional().describe('Pagination offset for next page'),
                 },
                 async ({ since, until, project_id, section_id, limit, offset }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
-                        const response = await client.getCompletedTasks({
-                            since,
-                            until,
-                            project_id,
-                            section_id,
-                            limit,
-                            offset
-                        })
+                        const params: Record<string, unknown> = {}
+                        if (since !== undefined) params.since = since
+                        if (until !== undefined) params.until = until
+                        if (project_id !== undefined) params.project_id = project_id
+                        if (section_id !== undefined) params.section_id = section_id
+                        if (limit !== undefined) params.limit = limit
+                        if (offset !== undefined) params.offset = offset
+
+                        const response = await client.get('/tasks/completed_by_due_date', params)
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(response, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error fetching completed tasks: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -853,13 +942,33 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'Create a new personal label in Todoist. Labels are used to categorize and filter tasks across projects.',
                 {
                     name: z.string().describe('Name of the label to create'),
-                    color: z.enum([
-                        'berry_red', 'red', 'orange', 'yellow', 'olive_green', 'lime_green',
-                        'green', 'mint_green', 'teal', 'sky_blue', 'light_blue', 'blue',
-                        'grape', 'violet', 'lavender', 'magenta', 'salmon', 'charcoal', 'grey', 'taupe'
-                    ]).optional().describe('Color of the label'),
+                    color: z
+                        .enum([
+                            'berry_red',
+                            'red',
+                            'orange',
+                            'yellow',
+                            'olive_green',
+                            'lime_green',
+                            'green',
+                            'mint_green',
+                            'teal',
+                            'sky_blue',
+                            'light_blue',
+                            'blue',
+                            'grape',
+                            'violet',
+                            'lavender',
+                            'magenta',
+                            'salmon',
+                            'charcoal',
+                            'grey',
+                            'taupe',
+                        ])
+                        .optional()
+                        .describe('Color of the label'),
                     order: z.number().optional().describe('Position order of the label'),
-                    is_favorite: z.boolean().optional().describe('Whether to mark this label as a favorite')
+                    is_favorite: z.boolean().optional().describe('Whether to mark this label as a favorite'),
                 },
                 async ({ name, color, order, is_favorite }) => {
                     const client = new TodoistClient(this.props.accessToken)
@@ -871,13 +980,13 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
 
                         const label = await client.post('/labels', labelData)
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(label, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(label, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error creating label: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -890,7 +999,7 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'Get all personal labels from Todoist. Returns a list of labels with their properties. Supports pagination.',
                 {
                     cursor: z.string().optional().describe('Pagination cursor from previous response for fetching next page'),
-                    limit: z.number().min(1).max(200).optional().describe('Number of labels to return per page (default: 50, max: 200)')
+                    limit: z.number().min(1).max(200).optional().describe('Number of labels to return per page (default: 50, max: 200)'),
                 },
                 async ({ cursor, limit }) => {
                     const client = new TodoistClient(this.props.accessToken)
@@ -901,13 +1010,13 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
 
                         const response = await client.get('/labels', params)
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(response, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error fetching labels: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -919,20 +1028,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'get_label',
                 'Get a specific label by ID from Todoist. Returns detailed information about the label.',
                 {
-                    label_id: z.number().describe('ID of the label to retrieve (must be a number)')
+                    label_id: z.string().describe('ID of the label to retrieve'),
                 },
                 async ({ label_id }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
                         const label = await client.get(`/labels/${label_id}`)
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(label, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(label, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error fetching label: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -944,15 +1053,35 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'update_label',
                 'Update an existing personal label in Todoist. Only provide the fields you want to change.',
                 {
-                    label_id: z.number().describe('ID of the label to update (must be a number)'),
+                    label_id: z.string().describe('ID of the label to update'),
                     name: z.string().optional().describe('New name for the label'),
-                    color: z.enum([
-                        'berry_red', 'red', 'orange', 'yellow', 'olive_green', 'lime_green',
-                        'green', 'mint_green', 'teal', 'sky_blue', 'light_blue', 'blue',
-                        'grape', 'violet', 'lavender', 'magenta', 'salmon', 'charcoal', 'grey', 'taupe'
-                    ]).optional().describe('New color for the label'),
+                    color: z
+                        .enum([
+                            'berry_red',
+                            'red',
+                            'orange',
+                            'yellow',
+                            'olive_green',
+                            'lime_green',
+                            'green',
+                            'mint_green',
+                            'teal',
+                            'sky_blue',
+                            'light_blue',
+                            'blue',
+                            'grape',
+                            'violet',
+                            'lavender',
+                            'magenta',
+                            'salmon',
+                            'charcoal',
+                            'grey',
+                            'taupe',
+                        ])
+                        .optional()
+                        .describe('New color for the label'),
                     order: z.number().optional().describe('New position order of the label'),
-                    is_favorite: z.boolean().optional().describe('Whether to mark this label as a favorite')
+                    is_favorite: z.boolean().optional().describe('Whether to mark this label as a favorite'),
                 },
                 async ({ label_id, name, color, order, is_favorite }) => {
                     const client = new TodoistClient(this.props.accessToken)
@@ -965,13 +1094,13 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
 
                         const label = await client.post(`/labels/${label_id}`, updateData)
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(label, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(label, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error updating label: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -983,20 +1112,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'delete_label',
                 'Delete a personal label from Todoist. WARNING: This will remove the label from all tasks that use it.',
                 {
-                    label_id: z.number().describe('ID of the label to delete (must be a number)')
+                    label_id: z.string().describe('ID of the label to delete'),
                 },
                 async ({ label_id }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
                         await client.delete(`/labels/${label_id}`)
                         return {
-                            content: [{ type: 'text', text: 'Label deleted successfully' }]
+                            content: [{ type: 'text', text: 'Label deleted successfully' }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error deleting label: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -1008,7 +1137,7 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'get_shared_labels',
                 'Get all shared labels available in Todoist. Shared labels are labels that can be used across different projects and workspaces.',
                 {
-                    omit_personal: z.boolean().optional().describe('Whether to omit personal labels from the results (default: false)')
+                    omit_personal: z.boolean().optional().describe('Whether to omit personal labels from the results (default: false)'),
                 },
                 async ({ omit_personal }) => {
                     const client = new TodoistClient(this.props.accessToken)
@@ -1016,15 +1145,15 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                         const params: Record<string, unknown> = {}
                         if (omit_personal !== undefined) params.omit_personal = omit_personal
 
-                        const response = await client.get('/labels/shared', params)
+                        const response = await client.get('/shared_labels', params)
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(response, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error fetching shared labels: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -1036,20 +1165,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'remove_shared_label',
                 'Remove a shared label from your account. This will stop the shared label from appearing in your label list.',
                 {
-                    name: z.string().describe('Name of the shared label to remove')
+                    name: z.string().describe('Name of the shared label to remove'),
                 },
                 async ({ name }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
-                        await client.post('/labels/shared/remove', { name })
+                        await client.post('/shared_labels/remove', { name })
                         return {
-                            content: [{ type: 'text', text: 'Shared label removed successfully' }]
+                            content: [{ type: 'text', text: 'Shared label removed successfully' }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error removing shared label: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -1062,23 +1191,23 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'Rename a shared label in your account. This changes how the shared label appears in your label list.',
                 {
                     name: z.string().describe('Current name of the shared label to rename'),
-                    new_name: z.string().describe('New name for the shared label')
+                    new_name: z.string().describe('New name for the shared label'),
                 },
                 async ({ name, new_name }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
-                        await client.post('/labels/shared/rename', {
+                        await client.post('/shared_labels/rename', {
                             name,
-                            new_name
+                            new_name,
                         })
                         return {
-                            content: [{ type: 'text', text: 'Shared label renamed successfully' }]
+                            content: [{ type: 'text', text: 'Shared label renamed successfully' }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error renaming shared label: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -1094,13 +1223,19 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 {
                     content: z.string().describe('The text content of the comment'),
                     task_id: z.string().optional().describe('ID of the task to comment on (either task_id or project_id is required)'),
-                    project_id: z.string().optional().describe('ID of the project to comment on (either task_id or project_id is required)'),
-                    attachment: z.object({
-                        file_url: z.string().describe('URL of the file to attach'),
-                        file_name: z.string().optional().describe('Name of the attached file'),
-                        file_type: z.string().optional().describe('MIME type of the attached file'),
-                        resource_type: z.string().optional().describe('Type of the attached resource')
-                    }).optional().describe('Optional file attachment for the comment')
+                    project_id: z
+                        .string()
+                        .optional()
+                        .describe('ID of the project to comment on (either task_id or project_id is required)'),
+                    attachment: z
+                        .object({
+                            file_url: z.string().describe('URL of the file to attach'),
+                            file_name: z.string().optional().describe('Name of the attached file'),
+                            file_type: z.string().optional().describe('MIME type of the attached file'),
+                            resource_type: z.string().optional().describe('Type of the attached resource'),
+                        })
+                        .optional()
+                        .describe('Optional file attachment for the comment'),
                 },
                 async ({ content, task_id, project_id, attachment }) => {
                     const client = new TodoistClient(this.props.accessToken)
@@ -1112,13 +1247,13 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
 
                         const comment = await client.post('/comments', commentData)
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(comment, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(comment, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error creating comment: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -1130,10 +1265,16 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'get_comments',
                 'Get all comments for a specific task or project in Todoist. Either task_id or project_id must be provided. Supports pagination.',
                 {
-                    task_id: z.string().optional().describe('ID of the task to get comments for (either task_id or project_id is required)'),
-                    project_id: z.string().optional().describe('ID of the project to get comments for (either task_id or project_id is required)'),
+                    task_id: z
+                        .string()
+                        .optional()
+                        .describe('ID of the task to get comments for (either task_id or project_id is required)'),
+                    project_id: z
+                        .string()
+                        .optional()
+                        .describe('ID of the project to get comments for (either task_id or project_id is required)'),
                     cursor: z.string().optional().describe('Pagination cursor from previous response for fetching next page'),
-                    limit: z.number().min(1).max(200).optional().describe('Number of comments to return per page (default: 50, max: 200)')
+                    limit: z.number().min(1).max(200).optional().describe('Number of comments to return per page (default: 50, max: 200)'),
                 },
                 async ({ task_id, project_id, cursor, limit }) => {
                     const client = new TodoistClient(this.props.accessToken)
@@ -1146,13 +1287,13 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
 
                         const response = await client.get('/comments', params)
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(response, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error fetching comments: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -1164,20 +1305,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'get_comment',
                 'Get a specific comment by ID from Todoist. Returns detailed information about the comment including its content, author, and timestamps.',
                 {
-                    comment_id: z.string().describe('ID of the comment to retrieve')
+                    comment_id: z.string().describe('ID of the comment to retrieve'),
                 },
                 async ({ comment_id }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
                         const comment = await client.get(`/comments/${comment_id}`)
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(comment, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(comment, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error fetching comment: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -1190,20 +1331,20 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'Update the content of an existing comment in Todoist. Only the comment content can be modified.',
                 {
                     comment_id: z.string().describe('ID of the comment to update'),
-                    content: z.string().describe('New text content for the comment')
+                    content: z.string().describe('New text content for the comment'),
                 },
                 async ({ comment_id, content }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
                         const comment = await client.post(`/comments/${comment_id}`, { content })
                         return {
-                            content: [{ type: 'text', text: JSON.stringify(comment, null, 2) }]
+                            content: [{ type: 'text', text: JSON.stringify(comment, null, 2) }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error updating comment: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
                         }
                     }
                 }
@@ -1215,20 +1356,240 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
                 'delete_comment',
                 'Delete a comment from Todoist. WARNING: This will permanently delete the comment and cannot be undone.',
                 {
-                    comment_id: z.string().describe('ID of the comment to delete')
+                    comment_id: z.string().describe('ID of the comment to delete'),
                 },
                 async ({ comment_id }) => {
                     const client = new TodoistClient(this.props.accessToken)
                     try {
                         await client.delete(`/comments/${comment_id}`)
                         return {
-                            content: [{ type: 'text', text: 'Comment deleted successfully' }]
+                            content: [{ type: 'text', text: 'Comment deleted successfully' }],
                         }
                     } catch (error: unknown) {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
                         return {
                             content: [{ type: 'text', text: `Error deleting comment: ${errorMessage}` }],
-                            isError: true
+                            isError: true,
+                        }
+                    }
+                }
+            )
+        }
+
+        // Reminder Management Tools (all non-essential - requires Pro/Business plan)
+
+        if (this.shouldRegisterTool('get_reminders')) {
+            this.server.tool(
+                'get_reminders',
+                'Get all reminders from Todoist. Returns all reminders set on tasks. Requires Todoist Pro or Business plan.',
+                {},
+                async () => {
+                    const client = new TodoistClient(this.props.accessToken)
+                    try {
+                        const response = (await client.sync({
+                            sync_token: '*',
+                            resource_types: JSON.stringify(['reminders']),
+                        })) as { reminders?: unknown[] }
+                        const reminders = response.reminders ?? []
+                        return {
+                            content: [{ type: 'text', text: JSON.stringify(reminders, null, 2) }],
+                        }
+                    } catch (error: unknown) {
+                        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+                        return {
+                            content: [{ type: 'text', text: `Error fetching reminders: ${errorMessage}` }],
+                            isError: true,
+                        }
+                    }
+                }
+            )
+        }
+
+        if (this.shouldRegisterTool('create_reminder')) {
+            this.server.tool(
+                'create_reminder',
+                'Create a reminder for a task in Todoist. Supports absolute reminders (specific date/time) and relative reminders (minutes before due time). Requires Todoist Pro or Business plan.',
+                {
+                    item_id: z.string().describe('ID of the task to set the reminder for'),
+                    type: z
+                        .enum(['absolute', 'relative'])
+                        .optional()
+                        .describe(
+                            'Reminder type: "absolute" for specific date/time, "relative" for minutes before due time. Auto-detected if not provided.'
+                        ),
+                    due_string: z
+                        .string()
+                        .optional()
+                        .describe('Reminder date/time in natural language (e.g., "tomorrow at 3pm"). For absolute reminders.'),
+                    due_date: z.string().optional().describe('Reminder date in YYYY-MM-DD format. For absolute reminders.'),
+                    due_datetime: z
+                        .string()
+                        .optional()
+                        .describe('Reminder date and time in ISO datetime format (e.g., "2024-12-31T15:00:00"). For absolute reminders.'),
+                    due_lang: z
+                        .string()
+                        .optional()
+                        .describe('Language for due_string parsing (e.g., "en", "ko"). Defaults to user language.'),
+                    due_timezone: z.string().optional().describe('Timezone for the reminder (e.g., "Asia/Seoul", "America/New_York")'),
+                    minute_offset: z
+                        .number()
+                        .optional()
+                        .describe('Minutes before the task due time to trigger the reminder. For relative reminders.'),
+                },
+                async ({ item_id, type, due_string, due_date, due_datetime, due_lang, due_timezone, minute_offset }) => {
+                    const client = new TodoistClient(this.props.accessToken)
+                    try {
+                        const uuid = crypto.randomUUID()
+                        const tempId = crypto.randomUUID()
+
+                        const reminderType = type ?? (minute_offset !== undefined ? 'relative' : 'absolute')
+
+                        const args: Record<string, unknown> = { item_id, type: reminderType }
+                        if (due_string !== undefined) args.due_string = due_string
+                        if (due_date !== undefined) args.due_date = due_date
+                        if (due_datetime !== undefined) args.due_datetime = due_datetime
+                        if (due_lang !== undefined) args.due_lang = due_lang
+                        if (due_timezone !== undefined) args.due_timezone = due_timezone
+                        if (minute_offset !== undefined) args.minute_offset = minute_offset
+
+                        const response = (await client.sync({
+                            commands: JSON.stringify([
+                                {
+                                    type: 'reminder_add',
+                                    uuid,
+                                    temp_id: tempId,
+                                    args,
+                                },
+                            ]),
+                        })) as {
+                            sync_status?: Record<string, string>
+                            temp_id_mapping?: Record<string, string>
+                        }
+
+                        const status = response.sync_status?.[uuid]
+                        if (status !== 'ok') {
+                            return {
+                                content: [{ type: 'text', text: `Error creating reminder: ${JSON.stringify(status)}` }],
+                                isError: true,
+                            }
+                        }
+
+                        const reminderId = response.temp_id_mapping?.[tempId]
+                        return {
+                            content: [
+                                {
+                                    type: 'text',
+                                    text: `Reminder created successfully. Reminder ID: ${reminderId}`,
+                                },
+                            ],
+                        }
+                    } catch (error: unknown) {
+                        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+                        return {
+                            content: [{ type: 'text', text: `Error creating reminder: ${errorMessage}` }],
+                            isError: true,
+                        }
+                    }
+                }
+            )
+        }
+
+        if (this.shouldRegisterTool('update_reminder')) {
+            this.server.tool(
+                'update_reminder',
+                'Update an existing reminder in Todoist. Only provide the fields you want to change. Requires Todoist Pro or Business plan.',
+                {
+                    reminder_id: z.string().describe('ID of the reminder to update'),
+                    due_string: z.string().optional().describe('New reminder date/time in natural language'),
+                    due_date: z.string().optional().describe('New reminder date in YYYY-MM-DD format'),
+                    due_datetime: z.string().optional().describe('New reminder date and time in ISO datetime format'),
+                    due_lang: z.string().optional().describe('Language for due_string parsing'),
+                    due_timezone: z.string().optional().describe('Timezone for the reminder'),
+                    minute_offset: z.number().optional().describe('New minutes before the task due time to trigger the reminder'),
+                },
+                async ({ reminder_id, due_string, due_date, due_datetime, due_lang, due_timezone, minute_offset }) => {
+                    const client = new TodoistClient(this.props.accessToken)
+                    try {
+                        const uuid = crypto.randomUUID()
+
+                        const args: Record<string, unknown> = { id: reminder_id }
+                        if (due_string !== undefined) args.due_string = due_string
+                        if (due_date !== undefined) args.due_date = due_date
+                        if (due_datetime !== undefined) args.due_datetime = due_datetime
+                        if (due_lang !== undefined) args.due_lang = due_lang
+                        if (due_timezone !== undefined) args.due_timezone = due_timezone
+                        if (minute_offset !== undefined) args.minute_offset = minute_offset
+
+                        const response = (await client.sync({
+                            commands: JSON.stringify([
+                                {
+                                    type: 'reminder_update',
+                                    uuid,
+                                    args,
+                                },
+                            ]),
+                        })) as { sync_status?: Record<string, string> }
+
+                        const status = response.sync_status?.[uuid]
+                        if (status !== 'ok') {
+                            return {
+                                content: [{ type: 'text', text: `Error updating reminder: ${JSON.stringify(status)}` }],
+                                isError: true,
+                            }
+                        }
+
+                        return {
+                            content: [{ type: 'text', text: 'Reminder updated successfully' }],
+                        }
+                    } catch (error: unknown) {
+                        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+                        return {
+                            content: [{ type: 'text', text: `Error updating reminder: ${errorMessage}` }],
+                            isError: true,
+                        }
+                    }
+                }
+            )
+        }
+
+        if (this.shouldRegisterTool('delete_reminder')) {
+            this.server.tool(
+                'delete_reminder',
+                'Delete a reminder from Todoist. Requires Todoist Pro or Business plan.',
+                {
+                    reminder_id: z.string().describe('ID of the reminder to delete'),
+                },
+                async ({ reminder_id }) => {
+                    const client = new TodoistClient(this.props.accessToken)
+                    try {
+                        const uuid = crypto.randomUUID()
+
+                        const response = (await client.sync({
+                            commands: JSON.stringify([
+                                {
+                                    type: 'reminder_delete',
+                                    uuid,
+                                    args: { id: reminder_id },
+                                },
+                            ]),
+                        })) as { sync_status?: Record<string, string> }
+
+                        const status = response.sync_status?.[uuid]
+                        if (status !== 'ok') {
+                            return {
+                                content: [{ type: 'text', text: `Error deleting reminder: ${JSON.stringify(status)}` }],
+                                isError: true,
+                            }
+                        }
+
+                        return {
+                            content: [{ type: 'text', text: 'Reminder deleted successfully' }],
+                        }
+                    } catch (error: unknown) {
+                        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+                        return {
+                            content: [{ type: 'text', text: `Error deleting reminder: ${errorMessage}` }],
+                            isError: true,
                         }
                     }
                 }

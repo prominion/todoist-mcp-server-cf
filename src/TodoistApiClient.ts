@@ -1,6 +1,4 @@
-const API_BASE_URL = 'https://api.todoist.com/rest/v2'
-const SYNC_API_URL = 'https://api.todoist.com/sync/v9/sync'
-const SYNC_API_BASE_URL = 'https://api.todoist.com/sync/v9'
+const API_BASE_URL = 'https://api.todoist.com/api/v1'
 
 export class TodoistClient {
     private readonly apiToken: string
@@ -47,7 +45,7 @@ export class TodoistClient {
 
         const queryParams = new URLSearchParams()
         for (const [key, value] of Object.entries(params)) {
-            if (value) {
+            if (value !== undefined && value !== null) {
                 queryParams.append(key, String(value))
             }
         }
@@ -68,27 +66,11 @@ export class TodoistClient {
     }
 
     /**
-     * Get current user info using the Sync API.
-     * The REST v9 API expects application/x-www-form-urlencoded body with
-     * sync_token and resource_types parameters.
+     * Get current user info using the API v1.
      */
     async getCurrentUser(): Promise<{ full_name: string; email: string }> {
-        const body = new URLSearchParams({
-            sync_token: '*',
-            resource_types: '["user"]',
-        }).toString()
-
-        const response = await fetch(SYNC_API_URL, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${this.apiToken}`,
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body,
-        })
-
-        const data = (await this.handleResponse(response)) as { user: { full_name: string; email: string } }
-        return data.user
+        const response = (await this.get('/user')) as { full_name: string; email: string }
+        return response
     }
 
     /**
@@ -130,79 +112,24 @@ export class TodoistClient {
     }
 
     /**
-     * Move a task using Sync API
-     * @param taskId - ID of the task to move
-     * @param destination - Object containing project_id, section_id, or parent_id
-     * @returns Sync API response
+     * Make a POST request to the Todoist Sync API endpoint
+     * @param formData - Form data as key-value pairs (complex values should be JSON.stringify'd by caller)
+     * @returns API response data
      */
-    async moveTask(taskId: string, destination: { project_id?: string; section_id?: string; parent_id?: string }): Promise<unknown> {
-        const uuid = crypto.randomUUID()
+    async sync(formData: Record<string, string>): Promise<unknown> {
+        const url = `${API_BASE_URL}/sync`
+        const body = new URLSearchParams(formData).toString()
 
-        const args: Record<string, string> = { id: taskId }
-        if (destination.project_id) args.project_id = destination.project_id
-        if (destination.section_id) args.section_id = destination.section_id
-        if (destination.parent_id) args.parent_id = destination.parent_id
+        console.log(`Making Sync POST request to: ${url}`)
 
-        const commands = [{
-            type: 'item_move',
-            uuid: uuid,
-            args: args
-        }]
-
-        console.log(`Making Sync API request to move task ${taskId}:`, JSON.stringify(commands, null, 2))
-
-        const response = await fetch(SYNC_API_URL, {
+        const response = await fetch(url, {
             method: 'POST',
-            headers: this.getHeaders(true),
-            body: JSON.stringify({ commands })
-        })
-
-        if (!response.ok) {
-            const errorText = await response.text()
-            throw new Error(`Todoist Sync API error (${response.status}): ${errorText}`)
-        }
-
-        const result = await response.json() as { sync_status: Record<string, string> }
-
-        // Check if the command was successful
-        if (result.sync_status && result.sync_status[uuid] !== 'ok') {
-            throw new Error(`Move task failed: ${JSON.stringify(result.sync_status[uuid])}`)
-        }
-
-        return result
-    }
-
-    /**
-     * Get completed tasks using Sync API
-     * @param params - Query parameters for filtering completed tasks
-     * @returns Completed tasks response
-     */
-    async getCompletedTasks(params: {
-        project_id?: string
-        section_id?: string
-        limit?: number
-        offset?: number
-        since?: string
-        until?: string
-        annotate_notes?: boolean
-    } = {}): Promise<unknown> {
-        const url = `${SYNC_API_BASE_URL}/completed/get_all`
-
-        const queryParams = new URLSearchParams()
-        for (const [key, value] of Object.entries(params)) {
-            if (value !== undefined && value !== null) {
-                queryParams.append(key, String(value))
-            }
-        }
-
-        const queryString = queryParams.toString()
-        const fullUrl = queryString ? `${url}?${queryString}` : url
-
-        console.log(`Making GET request to Sync API: ${fullUrl}`)
-
-        const response = await fetch(fullUrl, {
-            method: 'GET',
-            headers: this.getHeaders(),
+            headers: {
+                Authorization: `Bearer ${this.apiToken}`,
+                'Content-Type': 'application/x-www-form-urlencoded',
+                Accept: 'application/json',
+            },
+            body,
         })
 
         return this.handleResponse(response)

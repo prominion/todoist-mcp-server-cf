@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **Todoist MCP (Model Context Protocol) server** deployed on **Cloudflare Workers**. It provides 39 MCP tools (16 essential tools enabled by default) that allow AI assistants to interact with Todoist via OAuth 2.0, offering complete CRUD operations for projects, sections, tasks, labels, and comments.
+This is a **Todoist MCP (Model Context Protocol) server** deployed on **Cloudflare Workers**. It provides 43 MCP tools (18 essential tools enabled by default) that allow AI assistants to interact with Todoist via OAuth 2.0, offering complete CRUD operations for projects, sections, tasks, labels, comments, and reminders.
 
 **Key Technologies:**
 - **Cloudflare Workers** for serverless deployment
@@ -83,9 +83,10 @@ These are obtained from the [Todoist App Console](https://developer.todoist.com/
    - Props (user email, name, access token) are injected into the MCP server instance
 
 3. **API Client** (`TodoistApiClient.ts`):
-   - Wraps Todoist REST API v2 (`https://api.todoist.com/rest/v2`)
-   - Provides `get()`, `post()`, `delete()` methods for REST API
-   - Provides `moveTask()` method using Sync API v9 (`https://api.todoist.com/sync/v9/sync`)
+   - Wraps Todoist API v1 (`https://api.todoist.com/api/v1`)
+   - Provides `get()`, `post()`, `delete()` methods for REST endpoints
+   - Provides `sync()` method for Sync API endpoint (`application/x-www-form-urlencoded`)
+   - Provides `getCurrentUser()` for OAuth flow
    - Handles authorization headers and error responses
 
 4. **Entry Point** (`index.ts` exports):
@@ -96,8 +97,8 @@ These are obtained from the [Todoist App Console](https://developer.todoist.com/
 
 The server implements **configurable tool filtering** to reduce context token usage (lines 21-35 in `index.ts`):
 
-- **`MINIMAL_TOOL_SET = true`** (default): Exposes only 16 essential tools (~12-15k tokens)
-- **`MINIMAL_TOOL_SET = false`**: Exposes all 39 tools (~27k tokens)
+- **`MINIMAL_TOOL_SET = true`** (default): Exposes only 18 essential tools (~12-15k tokens)
+- **`MINIMAL_TOOL_SET = false`**: Exposes all 43 tools (~27k tokens)
 - **`ESSENTIAL_TOOLS`** Set defines which tools are included in minimal mode
 - **`shouldRegisterTool(toolName)`** determines if a tool should be registered
 
@@ -125,11 +126,13 @@ The server implements **configurable tool filtering** to reduce context token us
 
 3. **Access Token**: Available via `this.props.accessToken` in all tool handlers
 
-4. **API Base URLs**:
-   - REST API: `https://api.todoist.com/rest/v2` (대부분의 CRUD 작업)
-   - Sync API: `https://api.todoist.com/sync/v9/sync` (태스크 이동 등 특수 작업)
+4. **API Base URL**:
+   - 통합 API: `https://api.todoist.com/api/v1` (모든 CRUD 작업)
+   - Sync API: `POST /api/v1/sync` (`application/x-www-form-urlencoded` 형식, 리마인더 CRUD 등에 사용)
 
-   **참고**: REST API v2에서 반환하는 숫자 형식 ID는 Sync API v9와 호환됩니다. Sync API v1(`/api/v1/sync`)은 v2 형식 ID를 요구하므로 사용하지 마세요.
+   **참고**: API v1은 문자열 형식 ID (예: `"6X6HrfVQvQq5WCXH"`)를 사용합니다. 대부분의 리소스 ID는 `z.string()` 타입으로 정의되어 있습니다.
+
+   **리마인더 API**: 리마인더는 전용 REST 엔드포인트가 없으며, Sync API를 통해서만 CRUD 가능합니다. `TodoistClient.sync()` 메서드를 사용합니다. 리마인더 기능은 Todoist Pro/Business 플랜에서만 사용 가능합니다.
 
 5. **Due Date Support**: Tasks support three date formats:
    - `due_string`: Natural language (e.g., "tomorrow at 3pm")
@@ -177,9 +180,9 @@ When adding a new tool to `index.ts`:
 
 ### Todoist API Documentation
 
-Refer to the official Todoist REST API docs at: https://developer.todoist.com/rest/v2/
+Refer to the official Todoist API docs at: https://developer.todoist.com/api/v1/
 
-**Note**: The implementation uses API v2 endpoint (`api.todoist.com/rest/v2`). API v1 was deprecated and shut down on November 30, 2022.
+**Note**: The implementation uses the unified API v1 endpoint (`api.todoist.com/api/v1`). REST API v2 and Sync API v9 were shut down on February 10, 2026.
 
 ### Testing the Server
 
