@@ -1,5 +1,9 @@
 const API_BASE_URL = 'https://api.todoist.com/api/v1'
 
+const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504])
+const MAX_RETRIES = 3
+const MAX_WAIT_MS = 10_000
+
 export class TodoistClient {
     private readonly apiToken: string
 
@@ -20,6 +24,34 @@ export class TodoistClient {
         return headers
     }
 
+    private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+        let lastResponse: Response | undefined
+
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            const response = await fetch(url, init)
+
+            if (!RETRYABLE_STATUS_CODES.has(response.status) || attempt === MAX_RETRIES) {
+                return response
+            }
+
+            lastResponse = response
+
+            let delayMs: number
+            if (response.status === 429) {
+                const retryAfter = response.headers.get('Retry-After')
+                delayMs = retryAfter ? Math.min(parseInt(retryAfter, 10) * 1000, MAX_WAIT_MS) : 1000 * Math.pow(2, attempt)
+            } else {
+                delayMs = 1000 * Math.pow(2, attempt)
+            }
+
+            delayMs = Math.min(delayMs, MAX_WAIT_MS)
+            console.log(`Todoist API returned ${response.status}, retrying in ${delayMs}ms (attempt ${attempt + 1}/${MAX_RETRIES})`)
+            await new Promise((resolve) => setTimeout(resolve, delayMs))
+        }
+
+        return lastResponse!
+    }
+
     private async handleResponse(response: Response) {
         if (!response.ok) {
             const errorText = await response.text()
@@ -31,7 +63,12 @@ export class TodoistClient {
             return null
         }
 
-        return response.json()
+        const text = await response.text()
+        try {
+            return JSON.parse(text)
+        } catch {
+            throw new Error(`Todoist API returned non-JSON response (${response.status}): ${text.slice(0, 200)}`)
+        }
     }
 
     /**
@@ -57,7 +94,7 @@ export class TodoistClient {
 
         console.log(`Making GET request to: ${url}`)
 
-        const response = await fetch(url, {
+        const response = await this.fetchWithRetry(url, {
             method: 'GET',
             headers: this.getHeaders(),
         })
@@ -84,7 +121,7 @@ export class TodoistClient {
 
         console.log(`Making POST request to: ${url} with data:`, JSON.stringify(data, null, 2))
 
-        const response = await fetch(url, {
+        const response = await this.fetchWithRetry(url, {
             method: 'POST',
             headers: this.getHeaders(true),
             body: JSON.stringify(data),
@@ -103,7 +140,7 @@ export class TodoistClient {
 
         console.log(`Making DELETE request to: ${url}`)
 
-        const response = await fetch(url, {
+        const response = await this.fetchWithRetry(url, {
             method: 'DELETE',
             headers: this.getHeaders(),
         })
@@ -122,7 +159,7 @@ export class TodoistClient {
 
         console.log(`Making Sync POST request to: ${url}`)
 
-        const response = await fetch(url, {
+        const response = await this.fetchWithRetry(url, {
             method: 'POST',
             headers: {
                 Authorization: `Bearer ${this.apiToken}`,

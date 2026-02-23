@@ -371,37 +371,35 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
 
         // Section Management Tools
 
-        // Section CRUD operations (non-essential - removed in minimal tool set, except get_sections)
-        if (this.shouldRegisterTool('create_section')) {
-            this.server.tool(
-                'create_section',
-                'Create a new section within a project in Todoist. Sections help organize tasks within projects.',
-                {
-                    name: z.string().describe('Name of the section to create'),
-                    project_id: z.string().describe('ID of the project where the section will be created'),
-                    order: z.number().optional().describe('Position of the section within the project (optional)'),
-                },
-                async ({ name, project_id, order }) => {
-                    const client = new TodoistClient(this.props.accessToken)
-                    try {
-                        const section = await client.post('/sections', {
-                            name,
-                            project_id,
-                            order,
-                        })
-                        return {
-                            content: [{ type: 'text', text: JSON.stringify(section, null, 2) }],
-                        }
-                    } catch (error: unknown) {
-                        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-                        return {
-                            content: [{ type: 'text', text: `Error creating section: ${errorMessage}` }],
-                            isError: true,
-                        }
+        // Create a new section (essential)
+        this.server.tool(
+            'create_section',
+            'Create a new section within a project in Todoist. Sections help organize tasks within projects.',
+            {
+                name: z.string().describe('Name of the section to create'),
+                project_id: z.string().describe('ID of the project where the section will be created'),
+                order: z.number().optional().describe('Position of the section within the project (optional)'),
+            },
+            async ({ name, project_id, order }) => {
+                const client = new TodoistClient(this.props.accessToken)
+                try {
+                    const section = await client.post('/sections', {
+                        name,
+                        project_id,
+                        order,
+                    })
+                    return {
+                        content: [{ type: 'text', text: JSON.stringify(section, null, 2) }],
+                    }
+                } catch (error: unknown) {
+                    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+                    return {
+                        content: [{ type: 'text', text: `Error creating section: ${errorMessage}` }],
+                        isError: true,
                     }
                 }
-            )
-        }
+            }
+        )
 
         // Get all sections (essential)
         this.server.tool(
@@ -459,31 +457,30 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
             )
         }
 
-        if (this.shouldRegisterTool('update_section')) {
-            this.server.tool(
-                'update_section',
-                'Update an existing section in Todoist. Currently only the section name can be updated.',
-                {
-                    section_id: z.string().describe('ID of the section to update'),
-                    name: z.string().describe('New name for the section'),
-                },
-                async ({ section_id, name }) => {
-                    const client = new TodoistClient(this.props.accessToken)
-                    try {
-                        const section = await client.post(`/sections/${section_id}`, { name })
-                        return {
-                            content: [{ type: 'text', text: JSON.stringify(section, null, 2) }],
-                        }
-                    } catch (error: unknown) {
-                        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-                        return {
-                            content: [{ type: 'text', text: `Error updating section: ${errorMessage}` }],
-                            isError: true,
-                        }
+        // Update a section (essential)
+        this.server.tool(
+            'update_section',
+            'Update an existing section in Todoist. Currently only the section name can be updated.',
+            {
+                section_id: z.string().describe('ID of the section to update'),
+                name: z.string().describe('New name for the section'),
+            },
+            async ({ section_id, name }) => {
+                const client = new TodoistClient(this.props.accessToken)
+                try {
+                    const section = await client.post(`/sections/${section_id}`, { name })
+                    return {
+                        content: [{ type: 'text', text: JSON.stringify(section, null, 2) }],
+                    }
+                } catch (error: unknown) {
+                    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+                    return {
+                        content: [{ type: 'text', text: `Error updating section: ${errorMessage}` }],
+                        isError: true,
                     }
                 }
-            )
-        }
+            }
+        )
 
         if (this.shouldRegisterTool('delete_section')) {
             this.server.tool(
@@ -856,83 +853,79 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
             )
         }
 
-        // Completed task queries
-        if (this.shouldRegisterTool('get_completed_tasks_by_completion_date')) {
-            this.server.tool(
-                'get_completed_tasks_by_completion_date',
-                'Get tasks that were completed within a specific date range, based on when they were actually completed. Supports filtering and pagination.',
-                {
-                    since: z.string().optional().describe('Start date for completed tasks in ISO 8601 format (e.g., 2024-01-01T00:00:00)'),
-                    until: z.string().optional().describe('End date for completed tasks in ISO 8601 format (e.g., 2024-12-31T23:59:59)'),
-                    project_id: z.string().optional().describe('Filter by specific project ID'),
-                    section_id: z.string().optional().describe('Filter by specific section ID'),
-                    limit: z.number().min(1).max(200).optional().describe('Number of tasks to return (max 200, default: 30)'),
-                    offset: z.number().optional().describe('Pagination offset for next page'),
-                },
-                async ({ since, until, project_id, section_id, limit, offset }) => {
-                    const client = new TodoistClient(this.props.accessToken)
-                    try {
-                        const params: Record<string, unknown> = {}
-                        if (since !== undefined) params.since = since
-                        if (until !== undefined) params.until = until
-                        if (project_id !== undefined) params.project_id = project_id
-                        if (section_id !== undefined) params.section_id = section_id
-                        if (limit !== undefined) params.limit = limit
-                        if (offset !== undefined) params.offset = offset
+        // Completed task queries (essential)
+        this.server.tool(
+            'get_completed_tasks_by_completion_date',
+            'Get tasks that were completed within a specific date range, based on when they were actually completed. Supports filtering and pagination. Requires Todoist Pro or Business plan.',
+            {
+                since: z.string().optional().describe('Start date for completed tasks in ISO 8601 format (e.g., 2024-01-01T00:00:00)'),
+                until: z.string().optional().describe('End date for completed tasks in ISO 8601 format (e.g., 2024-12-31T23:59:59)'),
+                project_id: z.string().optional().describe('Filter by specific project ID'),
+                section_id: z.string().optional().describe('Filter by specific section ID'),
+                limit: z.number().min(1).max(200).optional().describe('Number of tasks to return (max 200, default: 30)'),
+                offset: z.number().optional().describe('Pagination offset for next page'),
+            },
+            async ({ since, until, project_id, section_id, limit, offset }) => {
+                const client = new TodoistClient(this.props.accessToken)
+                try {
+                    const params: Record<string, unknown> = {}
+                    if (since !== undefined) params.since = since
+                    if (until !== undefined) params.until = until
+                    if (project_id !== undefined) params.project_id = project_id
+                    if (section_id !== undefined) params.section_id = section_id
+                    if (limit !== undefined) params.limit = limit
+                    if (offset !== undefined) params.offset = offset
 
-                        const response = await client.get('/tasks/completed_by_completion_date', params)
-                        return {
-                            content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
-                        }
-                    } catch (error: unknown) {
-                        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-                        return {
-                            content: [{ type: 'text', text: `Error fetching completed tasks: ${errorMessage}` }],
-                            isError: true,
-                        }
+                    const response = await client.get('/tasks/completed_by_completion_date', params)
+                    return {
+                        content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
+                    }
+                } catch (error: unknown) {
+                    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+                    return {
+                        content: [{ type: 'text', text: `Error fetching completed tasks: ${errorMessage}` }],
+                        isError: true,
                     }
                 }
-            )
-        }
+            }
+        )
 
-        // Get completed tasks filtered by due date
-        if (this.shouldRegisterTool('get_completed_tasks_by_due_date')) {
-            this.server.tool(
-                'get_completed_tasks_by_due_date',
-                'Get completed tasks filtered by their due date. Unlike get_completed_tasks_by_completion_date, this filters based on when tasks were originally due, not when they were completed.',
-                {
-                    since: z.string().optional().describe('Start date in ISO 8601 format (e.g., 2024-01-01T00:00:00)'),
-                    until: z.string().optional().describe('End date in ISO 8601 format (e.g., 2024-12-31T23:59:59)'),
-                    project_id: z.string().optional().describe('Filter by specific project ID'),
-                    section_id: z.string().optional().describe('Filter by specific section ID'),
-                    limit: z.number().min(1).max(200).optional().describe('Number of tasks to return (max 200, default: 30)'),
-                    offset: z.number().optional().describe('Pagination offset for next page'),
-                },
-                async ({ since, until, project_id, section_id, limit, offset }) => {
-                    const client = new TodoistClient(this.props.accessToken)
-                    try {
-                        const params: Record<string, unknown> = {}
-                        if (since !== undefined) params.since = since
-                        if (until !== undefined) params.until = until
-                        if (project_id !== undefined) params.project_id = project_id
-                        if (section_id !== undefined) params.section_id = section_id
-                        if (limit !== undefined) params.limit = limit
-                        if (offset !== undefined) params.offset = offset
+        // Get completed tasks filtered by due date (essential)
+        this.server.tool(
+            'get_completed_tasks_by_due_date',
+            'Get completed tasks filtered by their due date. Unlike get_completed_tasks_by_completion_date, this filters based on when tasks were originally due, not when they were completed. Requires Todoist Pro or Business plan.',
+            {
+                since: z.string().optional().describe('Start date in ISO 8601 format (e.g., 2024-01-01T00:00:00)'),
+                until: z.string().optional().describe('End date in ISO 8601 format (e.g., 2024-12-31T23:59:59)'),
+                project_id: z.string().optional().describe('Filter by specific project ID'),
+                section_id: z.string().optional().describe('Filter by specific section ID'),
+                limit: z.number().min(1).max(200).optional().describe('Number of tasks to return (max 200, default: 30)'),
+                offset: z.number().optional().describe('Pagination offset for next page'),
+            },
+            async ({ since, until, project_id, section_id, limit, offset }) => {
+                const client = new TodoistClient(this.props.accessToken)
+                try {
+                    const params: Record<string, unknown> = {}
+                    if (since !== undefined) params.since = since
+                    if (until !== undefined) params.until = until
+                    if (project_id !== undefined) params.project_id = project_id
+                    if (section_id !== undefined) params.section_id = section_id
+                    if (limit !== undefined) params.limit = limit
+                    if (offset !== undefined) params.offset = offset
 
-                        const response = await client.get('/tasks/completed_by_due_date', params)
-                        return {
-                            content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
-                        }
-                    } catch (error: unknown) {
-                        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-                        return {
-                            content: [{ type: 'text', text: `Error fetching completed tasks: ${errorMessage}` }],
-                            isError: true,
-                        }
+                    const response = await client.get('/tasks/completed_by_due_date', params)
+                    return {
+                        content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
+                    }
+                } catch (error: unknown) {
+                    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+                    return {
+                        content: [{ type: 'text', text: `Error fetching completed tasks: ${errorMessage}` }],
+                        isError: true,
                     }
                 }
-            )
-        }
+            }
+        )
 
         // Label Management Tools (all non-essential - removed in minimal tool set)
 
@@ -993,35 +986,34 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
             )
         }
 
-        if (this.shouldRegisterTool('get_labels')) {
-            this.server.tool(
-                'get_labels',
-                'Get all personal labels from Todoist. Returns a list of labels with their properties. Supports pagination.',
-                {
-                    cursor: z.string().optional().describe('Pagination cursor from previous response for fetching next page'),
-                    limit: z.number().min(1).max(200).optional().describe('Number of labels to return per page (default: 50, max: 200)'),
-                },
-                async ({ cursor, limit }) => {
-                    const client = new TodoistClient(this.props.accessToken)
-                    try {
-                        const params: Record<string, unknown> = {}
-                        if (cursor) params.cursor = cursor
-                        if (limit) params.limit = limit
+        // Get all labels (essential)
+        this.server.tool(
+            'get_labels',
+            'Get all personal labels from Todoist. Returns a list of labels with their properties. Supports pagination.',
+            {
+                cursor: z.string().optional().describe('Pagination cursor from previous response for fetching next page'),
+                limit: z.number().min(1).max(200).optional().describe('Number of labels to return per page (default: 50, max: 200)'),
+            },
+            async ({ cursor, limit }) => {
+                const client = new TodoistClient(this.props.accessToken)
+                try {
+                    const params: Record<string, unknown> = {}
+                    if (cursor) params.cursor = cursor
+                    if (limit) params.limit = limit
 
-                        const response = await client.get('/labels', params)
-                        return {
-                            content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
-                        }
-                    } catch (error: unknown) {
-                        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-                        return {
-                            content: [{ type: 'text', text: `Error fetching labels: ${errorMessage}` }],
-                            isError: true,
-                        }
+                    const response = await client.get('/labels', params)
+                    return {
+                        content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
+                    }
+                } catch (error: unknown) {
+                    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+                    return {
+                        content: [{ type: 'text', text: `Error fetching labels: ${errorMessage}` }],
+                        isError: true,
                     }
                 }
-            )
-        }
+            }
+        )
 
         if (this.shouldRegisterTool('get_label')) {
             this.server.tool(
