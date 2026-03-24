@@ -172,3 +172,6 @@ dist
 .wrangler/
 
 wrangler.jsonc
+
+# Claude Code local settings (contains secrets)
+.claude/settings.local.json
