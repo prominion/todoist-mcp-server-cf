@@ -74,11 +74,11 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
             async ({ filter, cursor, limit }) => {
                 const client = new TodoistClient(this.props.accessToken)
                 try {
-                    const params: Record<string, unknown> = { filter }
+                    const params: Record<string, unknown> = { query: filter }
                     if (cursor) params.cursor = cursor
                     if (limit !== undefined) params.limit = limit
 
-                    const response = await client.get('/tasks/by_filter', params)
+                    const response = await client.get('/tasks/filter', params)
                     return {
                         content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
                     }
@@ -856,27 +856,25 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
         // Completed task queries (essential)
         this.server.tool(
             'get_completed_tasks_by_completion_date',
-            'Get tasks that were completed within a specific date range, based on when they were actually completed. Supports filtering and pagination. Requires Todoist Pro or Business plan.',
+            'Get tasks that were completed within a specific date range (up to 3 months), based on when they were actually completed. Supports filtering and cursor-based pagination. Requires Todoist Pro or Business plan.',
             {
-                since: z.string().optional().describe('Start date for completed tasks in ISO 8601 format (e.g., 2024-01-01T00:00:00)'),
-                until: z.string().optional().describe('End date for completed tasks in ISO 8601 format (e.g., 2024-12-31T23:59:59)'),
+                since: z.string().describe('Start date for completed tasks in ISO 8601 format (e.g., 2024-01-01T00:00:00). Required.'),
+                until: z.string().describe('End date for completed tasks in ISO 8601 format (e.g., 2024-12-31T23:59:59). Required.'),
                 project_id: z.string().optional().describe('Filter by specific project ID'),
                 section_id: z.string().optional().describe('Filter by specific section ID'),
-                limit: z.number().min(1).max(200).optional().describe('Number of tasks to return (max 200, default: 30)'),
-                offset: z.number().optional().describe('Pagination offset for next page'),
+                limit: z.number().optional().describe('Number of tasks to return (default: 50)'),
+                cursor: z.string().optional().describe('Pagination cursor from previous response (next_cursor) for fetching next page'),
             },
-            async ({ since, until, project_id, section_id, limit, offset }) => {
+            async ({ since, until, project_id, section_id, limit, cursor }) => {
                 const client = new TodoistClient(this.props.accessToken)
                 try {
-                    const params: Record<string, unknown> = {}
-                    if (since !== undefined) params.since = since
-                    if (until !== undefined) params.until = until
+                    const params: Record<string, unknown> = { since, until }
                     if (project_id !== undefined) params.project_id = project_id
                     if (section_id !== undefined) params.section_id = section_id
                     if (limit !== undefined) params.limit = limit
-                    if (offset !== undefined) params.offset = offset
+                    if (cursor !== undefined) params.cursor = cursor
 
-                    const response = await client.get('/tasks/completed_by_completion_date', params)
+                    const response = await client.get('/tasks/completed/by_completion_date', params)
                     return {
                         content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
                     }
@@ -893,27 +891,25 @@ export class TodoistMCP extends McpAgent<Env, unknown, Props> {
         // Get completed tasks filtered by due date (essential)
         this.server.tool(
             'get_completed_tasks_by_due_date',
-            'Get completed tasks filtered by their due date. Unlike get_completed_tasks_by_completion_date, this filters based on when tasks were originally due, not when they were completed. Requires Todoist Pro or Business plan.',
+            'Get completed tasks filtered by their original due date (up to 6 weeks range). Unlike get_completed_tasks_by_completion_date, this filters based on when tasks were originally due, not when they were completed. Requires Todoist Pro or Business plan.',
             {
-                since: z.string().optional().describe('Start date in ISO 8601 format (e.g., 2024-01-01T00:00:00)'),
-                until: z.string().optional().describe('End date in ISO 8601 format (e.g., 2024-12-31T23:59:59)'),
+                since: z.string().describe('Start due date in ISO 8601 format (e.g., 2024-01-01T00:00:00). Required.'),
+                until: z.string().describe('End due date in ISO 8601 format (e.g., 2024-12-31T23:59:59). Required.'),
                 project_id: z.string().optional().describe('Filter by specific project ID'),
                 section_id: z.string().optional().describe('Filter by specific section ID'),
-                limit: z.number().min(1).max(200).optional().describe('Number of tasks to return (max 200, default: 30)'),
-                offset: z.number().optional().describe('Pagination offset for next page'),
+                limit: z.number().optional().describe('Number of tasks to return (default: 50)'),
+                cursor: z.string().optional().describe('Pagination cursor from previous response (next_cursor) for fetching next page'),
             },
-            async ({ since, until, project_id, section_id, limit, offset }) => {
+            async ({ since, until, project_id, section_id, limit, cursor }) => {
                 const client = new TodoistClient(this.props.accessToken)
                 try {
-                    const params: Record<string, unknown> = {}
-                    if (since !== undefined) params.since = since
-                    if (until !== undefined) params.until = until
+                    const params: Record<string, unknown> = { since, until }
                     if (project_id !== undefined) params.project_id = project_id
                     if (section_id !== undefined) params.section_id = section_id
                     if (limit !== undefined) params.limit = limit
-                    if (offset !== undefined) params.offset = offset
+                    if (cursor !== undefined) params.cursor = cursor
 
-                    const response = await client.get('/tasks/completed_by_due_date', params)
+                    const response = await client.get('/tasks/completed/by_due_date', params)
                     return {
                         content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
                     }
